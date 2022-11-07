@@ -4,7 +4,11 @@
 
 ssh client wrapper for automatic login.
 
+**sshw demo**
 ![usage](./assets/sshw-demo.gif)
+
+**sshw scp demo**
+![usage sshw scp](./assets/sshw-scp-demo.gif)
 
 ## 说明
 

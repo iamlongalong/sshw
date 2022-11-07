@@ -108,7 +108,7 @@ func main() {
 			strBytes, _, _ := reader.ReadLine()
 			after := string(strBytes)
 
-			str := base + " " + node.Name + ":" + after
+			str := base + " " + node.User + "@" + node.Host + ":" + after
 			// opt, err := sshw.ParseScpOption(base)
 			opt, err := sshw.ParseScpOption(str)
 			if err != nil {
