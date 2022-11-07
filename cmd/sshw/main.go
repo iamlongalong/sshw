@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -95,24 +96,24 @@ func main() {
 		case "scp":
 			base := strings.Join(os.Args[1:len(os.Args)], " ")
 
-			// node := choose(nil, sshw.GetConfig())
-			var node = findName(nodes, "ss")
+			node := choose(nil, sshw.GetConfig())
+			// var node = findName(nodes, "ssdev")
 			if node == nil {
 				return
 			}
 
 			fmt.Print(base + " " + node.User + "@" + node.Host + ":")
 
-			// reader := bufio.NewReader(os.Stdin)
-			// strBytes, _, _ := reader.ReadLine()
-			// after := string(strBytes)
+			reader := bufio.NewReader(os.Stdin)
+			strBytes, _, _ := reader.ReadLine()
+			after := string(strBytes)
 
-			// str := base + " " + node.Name + ":" + after
-			opt, err := sshw.ParseScpOption(base)
-			// opt, err := sshw.ParseScpOption(str)
+			str := base + " " + node.Name + ":" + after
+			// opt, err := sshw.ParseScpOption(base)
+			opt, err := sshw.ParseScpOption(str)
 			if err != nil {
 				// fmt.Println(str)
-				fmt.Printf("%+v", opt)
+				// fmt.Printf("%+v", opt)
 
 				log.Error(err)
 				os.Exit(1)

@@ -1,13 +1,11 @@
 package sshw
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -129,8 +127,6 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 		return errors.Wrap(err, "get stdout pipe fail")
 	}
 
-	filename := path.Base(remotePath)
-
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
@@ -146,7 +142,7 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 
 		defer w.Close()
 
-		_, err = fmt.Fprintln(w, "C"+permissions, info.Size(), filename)
+		_, err = fmt.Fprintln(w, "C"+permissions, info.Size(), filepath.Base(remotePath))
 		if err != nil {
 			errCh <- errors.Wrap(err, "write command fail")
 			return
@@ -157,14 +153,7 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 			return
 		}
 
-		bf, err := ioutil.ReadAll(f)
-		if err != nil {
-			fmt.Println("err : ", err)
-		}
-
-		r := bytes.NewReader(bf)
-
-		_, err = io.CopyN(w, r, int64(r.Len()))
+		_, err = io.CopyN(w, f, info.Size())
 		if err != nil {
 			errCh <- errors.Wrap(err, "copy fail")
 			return
@@ -184,8 +173,7 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 
 	go func() {
 		defer wg.Done()
-		cmd := fmt.Sprintf("scp -qt %q", remotePath)
-		fmt.Println("got cmd : ", cmd)
+		cmd := fmt.Sprintf("scp -vt %q", remotePath)
 		err := s.Run(cmd)
 		if err != nil {
 			errCh <- errors.Wrap(err, "run scp fail")
@@ -203,8 +191,6 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 			return errors.Wrap(err, "copy from local fail")
 		}
 	}
-
-	fmt.Println("xxxx")
 
 	return nil
 }

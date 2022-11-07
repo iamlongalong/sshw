@@ -165,6 +165,10 @@ func (c *defaultClient) Scp(opt ScpOption) {
 		os.Exit(1)
 		return
 	}
+
+	fmt.Println("")
+	fmt.Println("✅ copy file success")
+	fmt.Println("")
 }
 
 func (c *defaultClient) Login() {
@@ -277,6 +281,7 @@ func (c *defaultClient) connect() error {
 	jNodes := c.node.Jump
 
 	var client *ssh.Client
+	var err error
 
 	if len(jNodes) > 0 {
 		jNode := jNodes[0]
@@ -298,8 +303,7 @@ func (c *defaultClient) connect() error {
 		}
 		client = ssh.NewClient(ncc, chans, reqs)
 	} else {
-		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-		client = client1
+		client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 		if err != nil {
 			msg := err.Error()
 			// use terminal password retry
@@ -322,7 +326,7 @@ func (c *defaultClient) connect() error {
 		}
 	}
 
-	l.Infof("connect server ssh -p %d %s@%s version: %s\n", c.node.port(), c.node.user(), host, string(client.ServerVersion()))
+	// l.Infof("connect server ssh -p %d %s@%s version: %s\n", c.node.port(), c.node.user(), host, string(client.ServerVersion()))
 
 	c.client = client
 
@@ -346,13 +350,30 @@ func (o *ScpOption) Valid() error {
 		return errors.New("src host and tar host can not be remote host both")
 	}
 
-	if strings.HasSuffix(o.srcFilePath, "/") {
+	if o.srcFilePath == "" || o.tarFilePath == "" {
+		return errors.New("src filepath or tar filepath should not be empty")
+	}
+
+	// check to ban dir copy
+	srcbase := filepath.Base(o.srcFilePath)
+	if strings.HasSuffix(srcbase, "/") || strings.HasSuffix(srcbase, ".") || strings.HasSuffix(srcbase, "~") {
 		return errors.New("do not support dir yet")
 	}
 
-	if strings.HasSuffix(o.tarFilePath, "/") {
-		_, fn := filepath.Split(o.srcFilePath)
-		o.tarFilePath = o.tarFilePath + fn
+	// convert for copy to dir
+	tarbase := filepath.Base(o.tarFilePath)
+	if strings.HasSuffix(tarbase, "/") || strings.HasSuffix(tarbase, ".") || strings.HasSuffix(tarbase, "~") {
+		o.tarFilePath = filepath.Join(filepath.Clean(o.tarFilePath), filepath.Base(o.srcFilePath))
+	}
+
+	// change ~ that scp may not support
+	if o.srcHost != "" && strings.HasPrefix(o.srcFilePath, "~") {
+		o.srcFilePath = "." + o.srcFilePath[1:]
+	}
+
+	// change ~ that scp may not support
+	if o.tarHost != "" && strings.HasPrefix(o.tarFilePath, "~") {
+		o.tarFilePath = "." + o.tarFilePath[1:]
 	}
 
 	return nil

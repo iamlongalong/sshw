@@ -6,6 +6,27 @@ ssh client wrapper for automatic login.
 
 ![usage](./assets/sshw-demo.gif)
 
+## 说明
+
+该项目 fork 自 [sshw](github.com/yinheli/sshw) , 这是一个非常好用的 ssh 工具，我使用也有很长一段时间了，真的对工作效率有很大提升，在此感恩作者们。 
+
+在使用的场景中，我有对文件拷贝的需求，以前常用 scp / sftp 这类工具，不过和原生的 ssh 命令一样，这些工具在使用的时候也需要记 ip (或名字)，由于用惯了 sshw 这个工具，因此希望将 scp 的功能也集成到该工具上。
+
+于是，对该项目做了些微的改造，参考 [go-scp](https://github.com/bramvdbogaerde/go-scp) 项目，将 scp 适配到了 sshw 上。
+
+目前为止，仅支持文件的拷贝 (暂未支持目录递归拷贝)，之后的计划有两个方面：
+
+- [ ] 增加目录递归拷贝
+- [ ] 增加拷贝进度
+
+使用上，和 scp 类似：
+
+```bash
+sshw scp xx.txt xxx:~/
+# 或
+sshw scp xxx:~/xx.txt ./
+```
+
 ## install
 
 use `go get`
