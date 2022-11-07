@@ -7,8 +7,9 @@ import (
 	"runtime"
 	"strings"
 
+	"sshw"
+
 	"github.com/manifoldco/promptui"
-	"github.com/yinheli/sshw"
 )
 
 const prev = "-parent-"
@@ -27,6 +28,21 @@ var (
 		Inactive: "  {{.Name | faint}}{{if .Alias}}({{.Alias | faint}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
 	}
 )
+
+func findName(nodes []*sshw.Node, name string) *sshw.Node {
+	for _, node := range nodes {
+		if node.Name == name {
+			return node
+		}
+		if len(node.Children) > 0 {
+			n := findName(node.Children, name)
+			if n != nil {
+				return n
+			}
+		}
+	}
+	return nil
+}
 
 func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
 	for _, node := range nodes {
@@ -72,15 +88,48 @@ func main() {
 		}
 	}
 
-	// login by alias
+	var nodes = sshw.GetConfig()
+
 	if len(os.Args) > 1 {
-		var nodeAlias = os.Args[1]
-		var nodes = sshw.GetConfig()
-		var node = findAlias(nodes, nodeAlias)
-		if node != nil {
+		switch os.Args[1] {
+		case "scp":
+			base := strings.Join(os.Args[1:len(os.Args)], " ")
+
+			// node := choose(nil, sshw.GetConfig())
+			var node = findName(nodes, "ss")
+			if node == nil {
+				return
+			}
+
+			fmt.Print(base + " " + node.User + "@" + node.Host + ":")
+
+			// reader := bufio.NewReader(os.Stdin)
+			// strBytes, _, _ := reader.ReadLine()
+			// after := string(strBytes)
+
+			// str := base + " " + node.Name + ":" + after
+			opt, err := sshw.ParseScpOption(base)
+			// opt, err := sshw.ParseScpOption(str)
+			if err != nil {
+				// fmt.Println(str)
+				fmt.Printf("%+v", opt)
+
+				log.Error(err)
+				os.Exit(1)
+				return
+			}
+
 			client := sshw.NewClient(node)
-			client.Login()
+			client.Scp(opt)
 			return
+		default: // login by alias
+			var nodeAlias = os.Args[1]
+			var node = findAlias(nodes, nodeAlias)
+			if node != nil {
+				client := sshw.NewClient(node)
+				client.Login()
+				return
+			}
 		}
 	}
 

@@ -2,6 +2,7 @@ package sshw
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,11 +10,13 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -39,11 +42,13 @@ var (
 
 type Client interface {
 	Login()
+	Scp(ScpOption)
 }
 
 type defaultClient struct {
 	clientConfig *ssh.ClientConfig
 	node         *Node
+	client       *ssh.Client
 }
 
 func genSSHConfig(node *Node) *defaultClient {
@@ -128,67 +133,50 @@ func NewClient(node *Node) Client {
 	return genSSHConfig(node)
 }
 
-func (c *defaultClient) Login() {
-	host := c.node.Host
-	port := strconv.Itoa(c.node.port())
-	jNodes := c.node.Jump
-
-	var client *ssh.Client
-
-	if len(jNodes) > 0 {
-		jNode := jNodes[0]
-		jc := genSSHConfig(jNode)
-		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		client = ssh.NewClient(ncc, chans, reqs)
-	} else {
-		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-		client = client1
-		if err != nil {
-			msg := err.Error()
-			// use terminal password retry
-			if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
-				fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
-				var b []byte
-				b, err = terminal.ReadPassword(int(syscall.Stdin))
-				if err == nil {
-					p := string(b)
-					if p != "" {
-						c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
-					}
-					fmt.Println()
-					client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-				}
-			}
-		}
-		if err != nil {
-			l.Error(err)
-			return
-		}
-	}
-	defer client.Close()
-
-	l.Infof("connect server ssh -p %d %s@%s version: %s\n", c.node.port(), c.node.user(), host, string(client.ServerVersion()))
-
-	session, err := client.NewSession()
+func (c *defaultClient) Scp(opt ScpOption) {
+	err := c.connect()
 	if err != nil {
 		l.Error(err)
+	}
+	defer c.Close()
+
+	err = opt.Valid()
+	if err != nil {
+		l.Error(err)
+		os.Exit(1)
 		return
 	}
-	defer session.Close()
+
+	session, err := c.client.NewSession()
+	if err != nil {
+		l.Error(err)
+		os.Exit(1)
+		return
+	}
+
+	if opt.srcHost == "" {
+		err = CopyFromLocal(context.Background(), session, opt.srcFilePath, opt.tarFilePath)
+	} else {
+		err = CopyFromRemote(context.Background(), session, opt.srcFilePath, opt.tarFilePath)
+	}
+
+	if err != nil {
+		l.Error(err)
+		os.Exit(1)
+		return
+	}
+}
+
+func (c *defaultClient) Login() {
+	c.connect()
+	defer c.Close()
+
+	session, err := c.client.NewSession()
+	if err != nil {
+		l.Error(err)
+		os.Exit(1)
+		return
+	}
 
 	fd := int(os.Stdin.Fd())
 	state, err := terminal.MakeRaw(fd)
@@ -272,9 +260,150 @@ func (c *defaultClient) Login() {
 	go func() {
 		for {
 			time.Sleep(time.Second * 10)
-			client.SendRequest("keepalive@openssh.com", false, nil)
+			c.client.SendRequest("keepalive@openssh.com", false, nil)
 		}
 	}()
 
 	session.Wait()
+}
+
+func (c *defaultClient) Close() error {
+	return c.client.Close()
+}
+
+func (c *defaultClient) connect() error {
+	host := c.node.Host
+	port := strconv.Itoa(c.node.port())
+	jNodes := c.node.Jump
+
+	var client *ssh.Client
+
+	if len(jNodes) > 0 {
+		jNode := jNodes[0]
+		jc := genSSHConfig(jNode)
+		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
+		if err != nil {
+			l.Error(err)
+			return err
+		}
+		conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
+		if err != nil {
+			l.Error(err)
+			return err
+		}
+		ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
+		if err != nil {
+			l.Error(err)
+			return err
+		}
+		client = ssh.NewClient(ncc, chans, reqs)
+	} else {
+		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+		client = client1
+		if err != nil {
+			msg := err.Error()
+			// use terminal password retry
+			if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
+				fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
+				var b []byte
+				b, err = terminal.ReadPassword(int(syscall.Stdin))
+				if err == nil {
+					p := string(b)
+					if p != "" {
+						c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
+					}
+					client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+				}
+			}
+		}
+		if err != nil {
+			l.Error(err)
+			return err
+		}
+	}
+
+	l.Infof("connect server ssh -p %d %s@%s version: %s\n", c.node.port(), c.node.user(), host, string(client.ServerVersion()))
+
+	c.client = client
+
+	return nil
+}
+
+type ScpOption struct {
+	srcFilePath string
+	srcHost     string
+
+	tarFilePath string
+	tarHost     string
+}
+
+func (o *ScpOption) Valid() error {
+	if o.srcHost == "" && o.tarHost == "" {
+		return errors.New("src host and tar host can not be empty both")
+	}
+
+	if o.srcHost != "" && o.tarHost != "" {
+		return errors.New("src host and tar host can not be remote host both")
+	}
+
+	if strings.HasSuffix(o.srcFilePath, "/") {
+		return errors.New("do not support dir yet")
+	}
+
+	if strings.HasSuffix(o.tarFilePath, "/") {
+		_, fn := filepath.Split(o.srcFilePath)
+		o.tarFilePath = o.tarFilePath + fn
+	}
+
+	return nil
+}
+
+func ParseScpOption(s string) (ScpOption, error) {
+	ss := strings.Split(s, " ")
+
+	sstar := make([]string, 0)
+	for _, ssitem := range ss {
+		if strings.TrimSpace(ssitem) != "" {
+			sstar = append(sstar, strings.TrimSpace(ssitem))
+		}
+	}
+
+	if len(sstar) != 3 {
+		return ScpOption{}, errors.Errorf("fail to parse scp syntax : %s", s)
+	}
+
+	if sstar[0] != "scp" {
+		return ScpOption{}, errors.Errorf("fail to parse scp syntax : %s", s)
+	}
+
+	var err error
+	opt := ScpOption{}
+
+	srcStr := sstar[1]
+
+	opt.srcHost, opt.srcFilePath, err = parseHostFile(srcStr)
+	if err != nil {
+		return ScpOption{}, err
+	}
+
+	tarStr := sstar[2]
+	opt.tarHost, opt.tarFilePath, err = parseHostFile(tarStr)
+	if err != nil {
+		return ScpOption{}, err
+	}
+
+	return opt, opt.Valid()
+}
+
+func parseHostFile(s string) (host string, filePath string, err error) {
+	ss := strings.Split(s, ":")
+	if len(ss) == 2 {
+		return ss[0], ss[1], nil
+	}
+
+	if len(ss) == 1 {
+		return "", ss[0], nil
+	}
+
+	return "", "", errors.Errorf("parse host fail : %s", s)
 }

@@ -15,5 +15,6 @@
 # Misc
 /dist
 .idea
+.vscode
 
 !.goreleaser.yml
