@@ -100,3 +100,7 @@ config example:
     - { delay: 1500, cmd: 0 }
     - { cmd: "echo 1" }
 ```
+
+# ps
+
+如果在看代码的时候，无法理解 `scp -t` 这个参数的，可以参考 [这篇文章](https://stackoverflow.com/questions/50637523/where-do-i-find-the-spec-for-scp-t)
