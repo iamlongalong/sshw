@@ -123,8 +123,6 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 	f, _ := os.Open(localPath)
 	defer f.Close()
 
-	permissions := fmt.Sprintf("%04d", info.Mode())
-
 	stdout, err := s.StdoutPipe()
 	if err != nil {
 		return errors.Wrap(err, "get stdout pipe fail")
@@ -145,7 +143,7 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 
 		defer w.Close()
 
-		_, err = fmt.Fprintln(w, "C"+permissions, info.Size(), filepath.Base(remotePath))
+		_, err = fmt.Fprintln(w, "C0644", info.Size(), filepath.Base(remotePath))
 		if err != nil {
 			errCh <- errors.Wrap(err, "write command fail")
 			return
