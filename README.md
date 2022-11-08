@@ -21,7 +21,8 @@ ssh client wrapper for automatic login.
 目前为止，仅支持文件的拷贝 (暂未支持目录递归拷贝)，之后的计划有两个方面：
 
 - [ ] 增加目录递归拷贝
-- [ ] 增加拷贝进度
+- [x] ~~增加拷贝进度~~ (2022-11-08)
+  - 进度条已完成，使用的 [progressbar](https://github.com/schollz/progressbar)，很顺畅，感恩作者
 
 使用上，和 scp 类似：
 
@@ -107,4 +108,6 @@ config example:
 
 # ps
 
-如果在看代码的时候，无法理解 `scp -t` 这个参数的，可以参考 [这篇文章](https://stackoverflow.com/questions/50637523/where-do-i-find-the-spec-for-scp-t)
+- 如果在看代码的时候，无法理解 `scp -t` 这个参数的，可以参考 [这篇文章](https://stackoverflow.com/questions/50637523/where-do-i-find-the-spec-for-scp-t)
+
+- 上面的 demo gif 图，是用 [terminalizer](https://github.com/faressoft/terminalizer) 录制的，挺好用。不过这个工具渲染出来的 gif 会相对较大，使用 [gifcompressor](https://gifcompressor.com/) 还挺不错，上面的 gif 图从原有的 4.6Mb 压缩到了 1.9Mb。

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/schollz/progressbar/v3"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -79,7 +80,9 @@ func CopyFromRemote(ctx context.Context, s *ssh.Session, remotePath string, loca
 			return
 		}
 
-		_, err = CopyN(f, r, infos.Size)
+		bar := getBar(infos.Size, "downloading : "+infos.Filename)
+
+		_, err = CopyN(io.MultiWriter(f, bar), r, infos.Size)
 		if err != nil {
 			errCh <- err
 			return
@@ -153,7 +156,9 @@ func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remote
 			return
 		}
 
-		_, err = io.CopyN(w, f, info.Size())
+		bar := getBar(info.Size(), "uploading : "+info.Name())
+
+		_, err = io.CopyN(io.MultiWriter(w, bar), f, info.Size())
 		if err != nil {
 			errCh <- errors.Wrap(err, "copy fail")
 			return
@@ -237,4 +242,23 @@ func CopyN(writer io.Writer, src io.Reader, size int64) (int64, error) {
 	}
 
 	return total, nil
+}
+
+func getBar(size int64, desc string) io.Writer {
+	bar := progressbar.NewOptions(int(size),
+		// progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(25),
+		progressbar.OptionSetDescription(desc),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+
+	return bar
 }
