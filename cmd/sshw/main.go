@@ -102,13 +102,19 @@ func main() {
 				return
 			}
 
-			fmt.Print(base + " " + node.User + "@" + node.Host + ":")
+			msg := base + " " + node.Host + ":"
+
+			if node.User != "" {
+				msg = base + " " + node.User + "@" + node.Host + ":"
+			}
+
+			fmt.Print(msg)
 
 			reader := bufio.NewReader(os.Stdin)
 			strBytes, _, _ := reader.ReadLine()
 			after := string(strBytes)
 
-			str := base + " " + node.User + "@" + node.Host + ":" + after
+			str := base + " " + node.Host + ":" + after
 			// opt, err := sshw.ParseScpOption(base)
 			opt, err := sshw.ParseScpOption(str)
 			if err != nil {

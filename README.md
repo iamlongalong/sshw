@@ -2,7 +2,7 @@
 
 ![GitHub](https://img.shields.io/github/license/yinheli/sshw) ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/yinheli/sshw)
 
-ssh client wrapper for automatic login.
+ssh client wrapper for automatic login ( with scp support now 🔥)
 
 **sshw demo**
 
@@ -36,13 +36,15 @@ sshw scp xxx:~/xx.txt ./
 
 ## install
 
-use `go get`
+use `go install`
 
 ```
-go get -u github.com/yinheli/sshw/cmd/sshw
+go install github.com/iamlongalong/sshw/cmd/sshw
 ```
 
-or download binary from [releases](//github.com/yinheli/sshw/releases).
+> remeber to add GOPATH/bin to the $PATH
+
+or download binary from [releases](https://github.com/iamlongalong/sshw/releases).
 
 ## config
 
