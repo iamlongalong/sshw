@@ -25,6 +25,9 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [ ] 增加目录递归拷贝
 - [x] ~~增加拷贝进度~~ (2022-11-08)
   - 进度条已完成，使用的 [progressbar](https://github.com/schollz/progressbar)，很顺畅，感恩作者
+- [ ] 增加系统 history
+- [ ] 增加 tab 键补全
+
 
 使用上，和 scp 类似：
 
