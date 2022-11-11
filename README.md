@@ -28,6 +28,8 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [x] ~~增加系统 history~~ (似乎不好搞,拿不到history文件地址,目前仅测试了 zsh 和 bash 和 sh)
 - [ ] 增加 tab 键补全
 - [x] ~~当 target path 为空时，改为相对路径~~ (2022-11-11)
+- [ ] 更加智能的地址分析
+- [ ] 支持 scp 中转
 
 
 使用上，和 scp 类似：
