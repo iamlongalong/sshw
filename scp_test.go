@@ -68,3 +68,8 @@ func TestParsePath(t *testing.T) {
 		assert.Equal(t, v, p)
 	}
 }
+
+func TestHistory(t *testing.T) {
+	v := os.Environ()
+	fmt.Println(v)
+}

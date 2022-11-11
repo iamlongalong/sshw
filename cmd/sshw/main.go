@@ -45,13 +45,45 @@ func findName(nodes []*sshw.Node, name string) *sshw.Node {
 	return nil
 }
 
+func findNameOrAliasOrHost(nodes []*sshw.Node, nameOrAliasOrHost string) *sshw.Node {
+	node := findName(nodes, nameOrAliasOrHost)
+	if node != nil {
+		return node
+	}
+
+	node = findAlias(nodes, nameOrAliasOrHost)
+	if node != nil {
+		return node
+	}
+
+	return findHost(nodes, nameOrAliasOrHost)
+}
+
+func findHost(nodes []*sshw.Node, nodeHost string) *sshw.Node {
+	for _, node := range nodes {
+		if node.Host == nodeHost {
+			return node
+		}
+		if len(node.Children) > 0 {
+			node = findHost(node.Children, nodeHost)
+			if node != nil {
+				return node
+			}
+		}
+	}
+	return nil
+}
+
 func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
 	for _, node := range nodes {
 		if node.Alias == nodeAlias {
 			return node
 		}
 		if len(node.Children) > 0 {
-			return findAlias(node.Children, nodeAlias)
+			node = findAlias(node.Children, nodeAlias)
+			if node != nil {
+				return node
+			}
 		}
 	}
 	return nil
@@ -95,43 +127,70 @@ func main() {
 		switch os.Args[1] {
 		case "scp":
 			base := strings.Join(os.Args[1:len(os.Args)], " ")
+			cmd := ""
+			shouldRecordHistory := false
 
-			node := choose(nil, sshw.GetConfig())
-			// var node = findName(nodes, "ssdev")
-			if node == nil {
-				return
+			if len(os.Args) >= 4 {
+				cmd = base
+			} else {
+				shouldRecordHistory = true
+				node := choose(nil, sshw.GetConfig())
+				// var node = findName(nodes, "ssdev")
+				if node == nil {
+					return
+				}
+
+				msg := base + " " + node.Host + ":"
+
+				if node.User != "" {
+					msg = base + " " + node.User + "@" + node.Host + ":"
+				}
+
+				fmt.Print(msg)
+
+				reader := bufio.NewReader(os.Stdin)
+				strBytes, _, _ := reader.ReadLine()
+				after := string(strBytes)
+
+				cmd = base + " " + node.Host + ":" + after
 			}
 
-			msg := base + " " + node.Host + ":"
-
-			if node.User != "" {
-				msg = base + " " + node.User + "@" + node.Host + ":"
-			}
-
-			fmt.Print(msg)
-
-			reader := bufio.NewReader(os.Stdin)
-			strBytes, _, _ := reader.ReadLine()
-			after := string(strBytes)
-
-			str := base + " " + node.Host + ":" + after
 			// opt, err := sshw.ParseScpOption(base)
-			opt, err := sshw.ParseScpOption(str)
+			opt, err := sshw.ParseScpOption(cmd)
 			if err != nil {
-				// fmt.Println(str)
-				// fmt.Printf("%+v", opt)
-
 				log.Error(err)
 				os.Exit(1)
 				return
 			}
 
+			var node *sshw.Node
+
+			if opt.SrcHost != "" {
+				node = findNameOrAliasOrHost(nodes, opt.SrcHost)
+				if node == nil {
+					log.Errorf("can not find node of : %s", opt.SrcHost)
+					os.Exit(1)
+					return
+				}
+			} else {
+				node = findNameOrAliasOrHost(nodes, opt.TarHost)
+				if node == nil {
+					log.Errorf("can not find node of : %s", opt.TarHost)
+					os.Exit(1)
+					return
+				}
+			}
+
 			client := sshw.NewClient(node)
 			client.Scp(opt)
+
+			if shouldRecordHistory {
+				sshw.RecordHistory(cmd)
+			}
 			return
 		default: // login by alias
 			var nodeAlias = os.Args[1]
-			var node = findAlias(nodes, nodeAlias)
+			var node = findNameOrAliasOrHost(nodes, nodeAlias)
 			if node != nil {
 				client := sshw.NewClient(node)
 				client.Login()
@@ -146,6 +205,7 @@ func main() {
 	}
 
 	client := sshw.NewClient(node)
+	sshw.RecordHistory(node.Host)
 	client.Login()
 }
 
