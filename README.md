@@ -30,6 +30,7 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [x] ~~当 target path 为空时，改为相对路径~~ (2022-11-11)
 - [ ] 更加智能的地址分析
 - [ ] 支持 scp 中转
+- [ ] 增加 update 自动更新
 
 
 使用上，和 scp 类似：
