@@ -167,7 +167,7 @@ func (c *defaultClient) Scp(opt ScpOption) {
 	}
 
 	fmt.Println("")
-	fmt.Println("✅ copy file success")
+	fmt.Println("✅  copy file success")
 	fmt.Println("")
 }
 
@@ -419,12 +419,25 @@ func ParseScpOption(s string) (ScpOption, error) {
 func parseHostFile(s string) (host string, filePath string, err error) {
 	ss := strings.Split(s, ":")
 	if len(ss) == 2 {
-		return ss[0], ss[1], nil
+		return ss[0], parseRelativePath(ss[1]), nil
 	}
 
 	if len(ss) == 1 {
-		return "", ss[0], nil
+		return "", parseRelativePath(ss[0]), nil
 	}
 
 	return "", "", errors.Errorf("parse host fail : %s", s)
+}
+
+func parseRelativePath(s string) string {
+	if s == "" || s == "." || s == "./" {
+		return "./"
+	}
+
+	cs := filepath.Clean(s)
+	if filepath.HasPrefix(cs, "./") || filepath.HasPrefix(cs, "/") || filepath.HasPrefix(cs, "~") {
+		return cs
+	}
+
+	return "./" + cs
 }

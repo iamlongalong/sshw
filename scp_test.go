@@ -47,3 +47,24 @@ func TestBase(t *testing.T) {
 
 	fmt.Printf("%+v\n", bs)
 }
+
+func TestParsePath(t *testing.T) {
+	cases := map[string]string{
+		"hello":      "./hello",
+		"/hello":     "/hello",
+		"./hello":    "./hello",
+		"xx:":        "./",
+		"xx:.":       "./",
+		"xx:hello":   "./hello",
+		"xx:./hello": "./hello",
+		"xx:~/hello": "~/hello",
+		"xx:/":       "/",
+	}
+
+	for k, v := range cases {
+		_, p, err := parseHostFile(k)
+		assert.Nil(t, err)
+
+		assert.Equal(t, v, p)
+	}
+}
