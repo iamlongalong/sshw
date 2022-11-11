@@ -402,13 +402,13 @@ func ParseScpOption(s string) (ScpOption, error) {
 
 	srcStr := sstar[1]
 
-	opt.SrcHost, opt.SrcFilePath, err = parseHostFile(srcStr)
+	opt.SrcHost, opt.SrcFilePath, err = ParseHostFile(srcStr)
 	if err != nil {
 		return ScpOption{}, err
 	}
 
 	tarStr := sstar[2]
-	opt.TarHost, opt.TarFilePath, err = parseHostFile(tarStr)
+	opt.TarHost, opt.TarFilePath, err = ParseHostFile(tarStr)
 	if err != nil {
 		return ScpOption{}, err
 	}
@@ -416,7 +416,7 @@ func ParseScpOption(s string) (ScpOption, error) {
 	return opt, opt.Valid()
 }
 
-func parseHostFile(s string) (host string, filePath string, err error) {
+func ParseHostFile(s string) (host string, filePath string, err error) {
 	ss := strings.Split(s, ":")
 	if len(ss) == 2 {
 		return ss[0], parseRelativePath(ss[1]), nil

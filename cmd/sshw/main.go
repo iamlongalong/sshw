@@ -128,14 +128,26 @@ func main() {
 		case "scp":
 			base := strings.Join(os.Args[1:len(os.Args)], " ")
 			cmd := ""
+			cmdReady := false
 			shouldRecordHistory := false
+
+			if len(os.Args) == 3 { // sshw scp xxxx
+				src := os.Args[2]
+				h, _, _ := sshw.ParseHostFile(src)
+				if h != "" {
+					cmd = base + " ./" // sshw scp xx:/tmp/x.txt  =>  sshw scp xx:/tmp/x.txt ./
+					cmdReady = true
+				}
+			}
 
 			if len(os.Args) >= 4 {
 				cmd = base
-			} else {
+				cmdReady = true
+			}
+
+			if !cmdReady {
 				shouldRecordHistory = true
 				node := choose(nil, sshw.GetConfig())
-				// var node = findName(nodes, "ssdev")
 				if node == nil {
 					return
 				}

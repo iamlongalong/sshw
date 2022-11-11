@@ -62,7 +62,7 @@ func TestParsePath(t *testing.T) {
 	}
 
 	for k, v := range cases {
-		_, p, err := parseHostFile(k)
+		_, p, err := ParseHostFile(k)
 		assert.Nil(t, err)
 
 		assert.Equal(t, v, p)
