@@ -389,8 +389,8 @@ func ParseScpOption(s string) (ScpOption, error) {
 		}
 	}
 
-	if len(sstar) != 3 {
-		return ScpOption{}, errors.Errorf("fail to parse scp syntax : %s", s)
+	if len(sstar) != 3 { // 默认 target 地址为 ./
+		sstar = append(sstar, "./")
 	}
 
 	if sstar[0] != "scp" {
