@@ -154,10 +154,14 @@ func (c *defaultClient) Scp(opt ScpOption) {
 		return
 	}
 
-	if opt.SrcHost == "" {
+	if opt.SrcHost != "" && opt.TarHost == "" {
 		err = CopyFromLocal(context.Background(), session, opt.SrcFilePath, opt.TarFilePath)
-	} else {
+	} else if opt.SrcHost == "" && opt.TarHost != "" {
 		err = CopyFromRemote(context.Background(), session, opt.SrcFilePath, opt.TarFilePath)
+	} else if opt.SrcHost == "" && opt.TarHost == "" {
+		err = errors.New("please use `cp` for local copy")
+	} else if opt.SrcHost != "" && opt.TarHost != "" {
+		err = CopyFromRemoteToRemote(context.Background(), nil, nil, opt.SrcFilePath, opt.TarFilePath)
 	}
 
 	if err != nil {
@@ -272,7 +276,11 @@ func (c *defaultClient) Login() {
 }
 
 func (c *defaultClient) Close() error {
-	return c.client.Close()
+	if c.client != nil {
+		return c.client.Close()
+	}
+
+	return nil
 }
 
 func (c *defaultClient) connect() error {

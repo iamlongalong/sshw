@@ -13,6 +13,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// CopyFromRemoteToRemote not implement!
+func CopyFromRemoteToRemote(ctx context.Context, src *ssh.Session, tar *ssh.Session, srcPath string, tarPath string) error {
+	return nil
+}
+
 func CopyFromRemote(ctx context.Context, s *ssh.Session, remotePath string, localPath string) error {
 	f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {

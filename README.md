@@ -31,6 +31,10 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [ ] 更加智能的地址分析
 - [ ] 支持 scp 中转
 - [ ] 增加 update 自动更新
+- [ ] 增加二级跳板(用跳板的key)
+- [ ] 增加支持 socks5 代理
+- [ ] 增加端口转发、动态代理, 后台运行, 超时重试
+- [ ] 支持直接使用 sshw root@xx.xx.xx.xx
 
 
 使用上，和 scp 类似：
