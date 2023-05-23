@@ -23,6 +23,7 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 目前为止，仅支持文件的拷贝 (暂未支持目录递归拷贝)，之后的计划有两个方面：
 
 - [ ] 增加目录递归拷贝
+- [ ] 增加模式匹配拷贝
 - [x] ~~增加拷贝进度~~ (2022-11-08)
   - 进度条已完成，使用的 [progressbar](https://github.com/schollz/progressbar)，很顺畅，感恩作者
 - [x] ~~增加系统 history~~ (似乎不好搞,拿不到history文件地址,目前仅测试了 zsh 和 bash 和 sh)
@@ -31,6 +32,8 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [ ] 更加智能的地址分析
 - [ ] 支持 scp 中转
 - [ ] 增加 update 自动更新
+- [ ] scp 选择多个组
+- [ ] sshw 穿透
 
 
 使用上，和 scp 类似：
