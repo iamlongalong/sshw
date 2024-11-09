@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"sshw"
+	"github.com/iamlongalong/sshw"
 
 	"github.com/manifoldco/promptui"
 )

@@ -1,4 +1,4 @@
-module sshw
+module github.com/iamlongalong/sshw
 
 go 1.19
 
