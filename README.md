@@ -34,6 +34,7 @@ ssh client wrapper for automatic login ( with scp support now 🔥)
 - [ ] 增加 update 自动更新
 - [ ] scp 选择多个组
 - [ ] sshw 穿透
+- [ ] 支持 socks5 proxy
 
 
 使用上，和 scp 类似：
