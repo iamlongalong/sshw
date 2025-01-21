@@ -13,189 +13,190 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// ProgressWriter 定义进度显示接口
+type ProgressWriter interface {
+	io.Writer
+	Close() error
+}
+
+// FileTransferError 统一的文件传输错误类型
+type FileTransferError struct {
+	Op  string
+	Err error
+}
+
+func (e *FileTransferError) Error() string {
+	return fmt.Sprintf("%s: %v", e.Op, e.Err)
+}
+
+func wrapError(op string, err error) error {
+	return &FileTransferError{Op: op, Err: err}
+}
+
 func CopyFromRemote(ctx context.Context, s *ssh.Session, remotePath string, localPath string) error {
 	f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return errors.Wrap(err, "open file fail")
+		return wrapError("open local file", err)
 	}
+	defer f.Close()
 
-	wg := sync.WaitGroup{}
-	errCh := make(chan error, 1)
-
-	wg.Add(1)
+	done := make(chan error, 1)
 	go func() {
 		var err error
-
 		defer func() {
-			// We must unblock the go routine first as we block on reading the channel later
-			wg.Done()
-
-			errCh <- err
+			done <- err
 		}()
 
 		r, err := s.StdoutPipe()
 		if err != nil {
-			errCh <- err
+			err = wrapError("get stdout pipe", err)
 			return
 		}
 
 		in, err := s.StdinPipe()
 		if err != nil {
-			errCh <- err
+			err = wrapError("get stdin pipe", err)
 			return
 		}
 		defer in.Close()
 
-		err = s.Start(fmt.Sprintf("scp -f %q", remotePath))
-		if err != nil {
-			errCh <- err
+		if err = s.Start(fmt.Sprintf("scp -f %q", remotePath)); err != nil {
+			err = wrapError("start scp command", err)
 			return
 		}
 
-		err = Ack(in)
-		if err != nil {
-			errCh <- err
+		if err = Ack(in); err != nil {
+			err = wrapError("send initial ack", err)
 			return
 		}
 
 		res, err := ParseResponse(r)
 		if err != nil {
-			errCh <- err
+			err = wrapError("parse response", err)
 			return
 		}
 		if res.IsFailure() {
-			errCh <- errors.New(res.GetMessage())
+			err = wrapError("remote error", errors.New(res.GetMessage()))
 			return
 		}
 
 		infos, err := res.ParseFileInfos()
 		if err != nil {
-			errCh <- err
+			err = wrapError("parse file info", err)
 			return
 		}
 
-		err = Ack(in)
-		if err != nil {
-			errCh <- err
+		if err = Ack(in); err != nil {
+			err = wrapError("send file info ack", err)
 			return
 		}
 
 		bar := getBar(infos.Size, "downloading : "+infos.Filename)
+		defer bar.(ProgressWriter).Close()
 
-		_, err = CopyN(io.MultiWriter(f, bar), r, infos.Size)
-		if err != nil {
-			errCh <- err
+		if _, err = CopyN(io.MultiWriter(f, bar), r, infos.Size); err != nil {
+			err = wrapError("copy file content", err)
 			return
 		}
 
-		err = Ack(in)
-		if err != nil {
-			errCh <- err
+		if err = Ack(in); err != nil {
+			err = wrapError("send final ack", err)
 			return
 		}
 
-		err = s.Wait()
-		if err != nil {
-			errCh <- err
+		if err = s.Wait(); err != nil {
+			err = wrapError("wait for scp completion", err)
 			return
 		}
 	}()
 
-	if err := wait(ctx, &wg); err != nil {
+	select {
+	case err := <-done:
 		return err
+	case <-ctx.Done():
+		return wrapError("context cancelled", ctx.Err())
 	}
-	finalErr := <-errCh
-	close(errCh)
-
-	return finalErr
 }
 
 func CopyFromLocal(ctx context.Context, s *ssh.Session, localPath string, remotePath string) error {
 	info, err := os.Stat(localPath)
 	if err != nil {
-		return errors.Wrap(err, "get file fail")
+		return wrapError("get file info", err)
 	}
 
 	if info.IsDir() {
-		return errors.Errorf("can not send a dir : %s", localPath)
+		return wrapError("validate file type", errors.New("cannot send a directory"))
 	}
 
-	f, _ := os.Open(localPath)
+	f, err := os.Open(localPath)
+	if err != nil {
+		return wrapError("open local file", err)
+	}
 	defer f.Close()
 
 	stdout, err := s.StdoutPipe()
 	if err != nil {
-		return errors.Wrap(err, "get stdout pipe fail")
+		return wrapError("get stdout pipe", err)
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-
-	errCh := make(chan error, 2)
-
+	done := make(chan error, 1)
 	go func() {
-		defer wg.Done()
+		var err error
+		defer func() {
+			done <- err
+		}()
+
 		w, err := s.StdinPipe()
 		if err != nil {
-			errCh <- errors.Wrap(err, "get stdin fail")
+			err = wrapError("get stdin pipe", err)
 			return
 		}
-
 		defer w.Close()
 
 		_, err = fmt.Fprintln(w, "C0644", info.Size(), filepath.Base(remotePath))
 		if err != nil {
-			errCh <- errors.Wrap(err, "write command fail")
+			err = wrapError("write file info", err)
 			return
 		}
 
 		if err = checkResponse(stdout); err != nil {
-			errCh <- errors.Wrap(err, "check response 1 fail")
+			err = wrapError("check initial response", err)
 			return
 		}
 
 		bar := getBar(info.Size(), "uploading : "+info.Name())
+		defer bar.(ProgressWriter).Close()
 
 		_, err = io.CopyN(io.MultiWriter(w, bar), f, info.Size())
 		if err != nil {
-			errCh <- errors.Wrap(err, "copy fail")
+			err = wrapError("copy file content", err)
 			return
 		}
 
 		_, err = fmt.Fprint(w, "\x00")
 		if err != nil {
-			errCh <- errors.Wrap(err, "write fail")
+			err = wrapError("write end marker", err)
 			return
 		}
 
 		if err = checkResponse(stdout); err != nil {
-			errCh <- errors.Wrap(err, "check response 2 fail")
+			err = wrapError("check final response", err)
 			return
 		}
-	}()
 
-	go func() {
-		defer wg.Done()
 		cmd := fmt.Sprintf("scp -vt %q", remotePath)
-		err := s.Run(cmd)
-		if err != nil {
-			errCh <- errors.Wrap(err, "run scp fail")
+		if err = s.Run(cmd); err != nil {
+			err = wrapError("run scp command", err)
 			return
 		}
 	}()
 
-	if err := wait(ctx, &wg); err != nil {
-		return errors.Wrap(err, "wait fail")
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return wrapError("context cancelled", ctx.Err())
 	}
-
-	close(errCh)
-	for err := range errCh {
-		if err != nil {
-			return errors.Wrap(err, "copy from local fail")
-		}
-	}
-
-	return nil
 }
 
 func checkResponse(r io.Reader) error {

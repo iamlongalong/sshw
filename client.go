@@ -18,7 +18,7 @@ import (
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -41,8 +41,8 @@ var (
 )
 
 type Client interface {
-	Login()
-	Scp(ScpOption)
+	Login() error
+	Scp(ScpOption) error
 }
 
 type defaultClient struct {
@@ -54,64 +54,13 @@ type defaultClient struct {
 func genSSHConfig(node *Node) *defaultClient {
 	u, err := user.Current()
 	if err != nil {
-		l.Error(err)
 		return nil
 	}
 
-	var authMethods []ssh.AuthMethod
-
-	var pemBytes []byte
-	if node.KeyPath == "" {
-		pemBytes, err = ioutil.ReadFile(path.Join(u.HomeDir, ".ssh/id_rsa"))
-	} else {
-		pemBytes, err = ioutil.ReadFile(node.KeyPath)
-	}
+	authMethods, err := buildAuthMethods(node, u)
 	if err != nil {
 		l.Error(err)
-	} else {
-		var signer ssh.Signer
-		if node.Passphrase != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(pemBytes, []byte(node.Passphrase))
-		} else {
-			signer, err = ssh.ParsePrivateKey(pemBytes)
-		}
-		if err != nil {
-			l.Error(err)
-		} else {
-			authMethods = append(authMethods, ssh.PublicKeys(signer))
-		}
 	}
-
-	password := node.password()
-
-	if password != nil {
-		authMethods = append(authMethods, password)
-	}
-
-	authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-		answers := make([]string, 0, len(questions))
-		for i, q := range questions {
-			fmt.Print(q)
-			if echos[i] {
-				scan := bufio.NewScanner(os.Stdin)
-				if scan.Scan() {
-					answers = append(answers, scan.Text())
-				}
-				err := scan.Err()
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				b, err := terminal.ReadPassword(int(syscall.Stdin))
-				if err != nil {
-					return nil, err
-				}
-				fmt.Println()
-				answers = append(answers, string(b))
-			}
-		}
-		return answers, nil
-	}))
 
 	config := &ssh.ClientConfig{
 		User:            node.user(),
@@ -129,30 +78,138 @@ func genSSHConfig(node *Node) *defaultClient {
 	}
 }
 
+func buildAuthMethods(node *Node, u *user.User) ([]ssh.AuthMethod, error) {
+	var authMethods []ssh.AuthMethod
+
+	// Add public key authentication
+	if err := addPublicKeyAuth(&authMethods, node, u); err != nil {
+		l.Error(err)
+	}
+
+	// Add password authentication if available
+	if password := node.password(); password != nil {
+		authMethods = append(authMethods, password)
+	}
+
+	// Add keyboard interactive authentication
+	authMethods = append(authMethods, keyboardInteractiveAuth())
+
+	return authMethods, nil
+}
+
+func addPublicKeyAuth(authMethods *[]ssh.AuthMethod, node *Node, u *user.User) error {
+	var keyPath string
+	if node.KeyPath == "" {
+		keyPath = path.Join(u.HomeDir, ".ssh/id_rsa")
+	} else {
+		keyPath = node.KeyPath
+	}
+
+	pemBytes, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to read key file: %w", err)
+	}
+
+	var signer ssh.Signer
+	if node.Passphrase != "" {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(pemBytes, []byte(node.Passphrase))
+	} else {
+		signer, err = ssh.ParsePrivateKey(pemBytes)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	*authMethods = append(*authMethods, ssh.PublicKeys(signer))
+	return nil
+}
+
+func keyboardInteractiveAuth() ssh.AuthMethod {
+	return ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+		answers := make([]string, 0, len(questions))
+		for i, q := range questions {
+			fmt.Print(q)
+			if echos[i] {
+				scan := bufio.NewScanner(os.Stdin)
+				if scan.Scan() {
+					answers = append(answers, scan.Text())
+				}
+				err := scan.Err()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				b, err := term.ReadPassword(int(syscall.Stdin))
+				if err != nil {
+					return nil, err
+				}
+				fmt.Println()
+				answers = append(answers, string(b))
+			}
+		}
+		return answers, nil
+	})
+}
+
 func NewClient(node *Node) Client {
 	return genSSHConfig(node)
 }
 
-func (c *defaultClient) Scp(opt ScpOption) {
+type SessionManager struct {
+	session   *ssh.Session
+	stdinPipe io.WriteCloser
+	fd        int
+	state     *term.State
+}
+
+func NewSessionManager(session *ssh.Session) (*SessionManager, error) {
+	fd := int(os.Stdin.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make terminal raw: %w", err)
+	}
+
+	stdinPipe, err := session.StdinPipe()
+	if err != nil {
+		term.Restore(fd, state)
+		return nil, fmt.Errorf("failed to get stdin pipe: %w", err)
+	}
+
+	return &SessionManager{
+		session:   session,
+		stdinPipe: stdinPipe,
+		fd:        fd,
+		state:     state,
+	}, nil
+}
+
+func (sm *SessionManager) Close() {
+	if sm.state != nil {
+		term.Restore(sm.fd, sm.state)
+	}
+	if sm.session != nil {
+		sm.session.Close()
+	}
+}
+
+func (c *defaultClient) Scp(opt ScpOption) error {
 	err := c.connect()
 	if err != nil {
-		l.Error(err)
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer c.Close()
 
 	err = opt.Valid()
 	if err != nil {
-		l.Error(err)
-		os.Exit(1)
-		return
+		return fmt.Errorf("invalid scp option: %w", err)
 	}
 
 	session, err := c.client.NewSession()
 	if err != nil {
-		l.Error(err)
-		os.Exit(1)
-		return
+		return fmt.Errorf("failed to create session: %w", err)
 	}
+	defer session.Close()
 
 	if opt.SrcHost == "" {
 		err = CopyFromLocal(context.Background(), session, opt.SrcFilePath, opt.TarFilePath)
@@ -161,39 +218,36 @@ func (c *defaultClient) Scp(opt ScpOption) {
 	}
 
 	if err != nil {
-		l.Error(err)
-		os.Exit(1)
-		return
+		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
 	fmt.Println("")
 	fmt.Println("✅  copy file success")
 	fmt.Println("")
+	return nil
 }
 
-func (c *defaultClient) Login() {
-	c.connect()
+func (c *defaultClient) Login() error {
+	err := c.connect()
+	if err != nil {
+		return err
+	}
 	defer c.Close()
 
 	session, err := c.client.NewSession()
 	if err != nil {
-		l.Error(err)
-		os.Exit(1)
-		return
+		return fmt.Errorf("failed to create session: %w", err)
 	}
 
-	fd := int(os.Stdin.Fd())
-	state, err := terminal.MakeRaw(fd)
+	sm, err := NewSessionManager(session)
 	if err != nil {
-		l.Error(err)
-		return
+		return fmt.Errorf("failed to create session manager: %w", err)
 	}
-	defer terminal.Restore(fd, state)
+	defer sm.Close()
 
-	w, h, err := terminal.GetSize(fd)
+	w, h, err := term.GetSize(sm.fd)
 	if err != nil {
-		l.Error(err)
-		return
+		return fmt.Errorf("failed to get terminal size: %w", err)
 	}
 
 	modes := ssh.TerminalModes{
@@ -203,72 +257,87 @@ func (c *defaultClient) Login() {
 	}
 	err = session.RequestPty("xterm", h, w, modes)
 	if err != nil {
-		l.Error(err)
-		return
+		return fmt.Errorf("failed to request pty: %w", err)
 	}
 
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
-	stdinPipe, err := session.StdinPipe()
-	if err != nil {
-		l.Error(err)
-		return
-	}
 
 	err = session.Shell()
 	if err != nil {
-		l.Error(err)
-		return
+		return fmt.Errorf("failed to start shell: %w", err)
 	}
 
-	// then callback
-	for i := range c.node.CallbackShells {
-		shell := c.node.CallbackShells[i]
+	// Execute callback shells
+	for _, shell := range c.node.CallbackShells {
 		time.Sleep(shell.Delay * time.Millisecond)
-		stdinPipe.Write([]byte(shell.Cmd + "\r"))
+		_, err = sm.stdinPipe.Write([]byte(shell.Cmd + "\r"))
+		if err != nil {
+			return fmt.Errorf("failed to write callback shell: %w", err)
+		}
 	}
 
-	// change stdin to user
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle user input
 	go func() {
-		_, err = io.Copy(stdinPipe, os.Stdin)
-		l.Error(err)
-		session.Close()
+		_, err = io.Copy(sm.stdinPipe, os.Stdin)
+		if err != nil {
+			l.Error(fmt.Errorf("stdin copy error: %w", err))
+		}
+		cancel()
 	}()
 
-	// interval get terminal size
-	// fix resize issue
+	// Handle terminal resize
 	go func() {
-		var (
-			ow = w
-			oh = h
-		)
-		for {
-			cw, ch, err := terminal.GetSize(fd)
-			if err != nil {
-				break
-			}
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 
-			if cw != ow || ch != oh {
-				err = session.WindowChange(ch, cw)
+		ow, oh := w, h
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cw, ch, err := term.GetSize(sm.fd)
 				if err != nil {
-					break
+					l.Error(fmt.Errorf("get terminal size error: %w", err))
+					return
 				}
-				ow = cw
-				oh = ch
+
+				if cw != ow || ch != oh {
+					err = session.WindowChange(ch, cw)
+					if err != nil {
+						l.Error(fmt.Errorf("window change error: %w", err))
+						return
+					}
+					ow, oh = cw, ch
+				}
 			}
-			time.Sleep(time.Second)
 		}
 	}()
 
-	// send keepalive
+	// Handle keepalive
 	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
 		for {
-			time.Sleep(time.Second * 10)
-			c.client.SendRequest("keepalive@openssh.com", false, nil)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _, err := c.client.SendRequest("keepalive@openssh.com", false, nil)
+				if err != nil {
+					l.Error(fmt.Errorf("keepalive error: %w", err))
+					return
+				}
+			}
 		}
 	}()
 
-	session.Wait()
+	return session.Wait()
 }
 
 func (c *defaultClient) Close() error {
@@ -310,7 +379,7 @@ func (c *defaultClient) connect() error {
 			if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
 				fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
 				var b []byte
-				b, err = terminal.ReadPassword(int(syscall.Stdin))
+				b, err = term.ReadPassword(int(syscall.Stdin))
 				if err == nil {
 					p := string(b)
 					if p != "" {
